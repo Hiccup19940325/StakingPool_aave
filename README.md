@@ -1,7 +1,8 @@
 # About
-There is a simple aave USDC/aUSDC staking template. Contracts provides these functions:depositWithUSDC, depositWithAUSDC, withdrawInUSDC, withdrawInAUSDC, harvestRewards, pendingRewards.
+There is a simple aave USDC/aUSDC staking template. 
+Contracts provides these functions:depositWithUSDC, depositWithAUSDC, withdrawInUSDC, withdrawInAUSDC, harvestRewards, pendingRewards.
 
-#Core stuff
+# Core stuff
 deposit USDC into the Aaave
 take aUSDC
 stake the received aUSDC into the staking pool
