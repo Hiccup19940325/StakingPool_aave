@@ -89,6 +89,10 @@ contract StakingPool {
         emit DepositWithUSDC(msg.sender, amount);
     }
 
+    /**
+     * @dev Deposits an 'amount' of aUSDC into the stakingPool
+     * @param amount the amount that staker staked into the stakingPool
+     */
     function depositWithAUSDC(uint amount) external {
         require(amount > 0, "amount should be more than 0");
         stakerInfo storage staker = stakers[msg.sender];
@@ -114,15 +118,81 @@ contract StakingPool {
     }
 
     /**
+     * @dev Withdraw an 'amount' of USDC from stakingPool's aUSDC
+     * @param amount the amount that staker withdraw from the stakingPool
+     */
+    function depositInUSDC(uint amount) external {
+        require(amount > 0, "amount should be more than 0");
+
+        //convert amount to scaledAmount
+        uint _amount = amount.rayDiv(
+            aaveLendingPool.getReserveData(address(usdcToken)).liquidityIndex
+        );
+        stakerInfo storage staker = stakers[msg.sender];
+
+        require(
+            _amount <= staker.scaledAmount,
+            "amount should be less than staker's staked amount"
+        );
+
+        //update the states and get the pending rewards
+        harvestRewards();
+
+        //update the stakerInfo and totalAmount
+        staker.scaledAmount -= _amount;
+        staker.rewardsDebt =
+            (staker.amount * accumulatedRewardsPerShare) /
+            REWARDS_PRECISION;
+        totalAmount -= _amount;
+
+        aaveLendingPool.withdraw(address(usdcToken), amount, msg.sender);
+
+        emit WithdrawInUSDC(msg.sender, amount);
+    }
+
+    /**
+     * @dev Withdraw an 'amount' of aUSDC from stakingPool
+     * @param amount the amount that staker withdraw from the stakingPool
+     */
+    function depositInAUSDC(uint amount) external {
+        require(amount > 0, "amount should be more than 0");
+
+        //convert amount to scaledAmount
+        uint _amount = amount.rayDiv(
+            aaveLendingPool.getReserveData(address(usdcToken)).liquidityIndex
+        );
+        stakerInfo storage staker = stakers[msg.sender];
+
+        require(
+            _amount <= staker.scaledAmount,
+            "amount should be less than staker's staked amount"
+        );
+
+        //update the states and get the pending rewards
+        harvestRewards();
+
+        //update the stakerInfo and totalAmount
+        staker.scaledAmount -= _amount;
+        staker.rewardsDebt =
+            (staker.amount * accumulatedRewardsPerShare) /
+            REWARDS_PRECISION;
+        totalAmount -= _amount;
+
+        ausdcToken.safeTransfer(msg.sender, amount);
+
+        emit WithdrawInAUSDC(msg.sender, amount);
+    }
+
+    /**
      * @dev Update the accumulatedRewardsPerShare, staker's rewardsDebt and mint the pending reward mocktoken to staker
      */
-    function harvestRewards() internal {
+    function harvestRewards() public {
         if (totalScaledAmount == 0) {
             lastRewardedBlock = block.number;
             return;
         }
 
-        stakerInfo storage staker = block.number;
+        stakerInfo storage staker = stakers[msg.sender];
 
         uint rewards = (block.number - lastRewardedBlock) * rewardPerBlock;
 
@@ -151,5 +221,19 @@ contract StakingPool {
             REWARDS_PRECISION;
 
         mockToken.mint(msg.sender, rewardsToHarvest);
+    }
+
+    /**
+     * @dev Get the pending Rewards
+     * @return pendingRewards the amount of the pendingRewards
+     */
+    function pendingRewards() public view returns (uint pendingRewards) {
+        stakerInfo storage staker = stakers[msg.sender];
+
+        //calculate the pending rewards
+        pendingRewards =
+            (staker.scaledAmount * accumulatedRewardsPerShare) /
+            REWARDS_PRECISION -
+            staker.rewardsDebt;
     }
 }
