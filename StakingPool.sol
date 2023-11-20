@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.6.12;
 
-import {IERC20} from "../../dependencies/openzeppelin/contracts/IERC20.sol";
-import {WadRayMath} from "../libraries/math/WadRayMath.sol";
-import {IAaveLendingPool} from "../../interfaces/IAaveLendingPool.sol";
-import {IAToken} from "../../interfaces/IAToken.sol";
-import {SafeERC20} from "../../dependencies/openzeppelin/contracts/SafeERC20.sol";
+import {IERC20} from "@aave/protocol-v2/contracts/dependencies/openzeppelin/contracts/IERC20.sol";
+import {WadRayMath} from "@aave/protocol-v2/contracts/libraries/math/WadRayMath.sol";
+import {ILendingPool} from "@aave/protocol-v2/contracts/interfaces/ILendingPool.sol";
+import {IAToken} from "@aave/protocol-v2/contracts/interfaces/IAToken.sol";
+import {SafeERC20} from "@aave/protocol-v2/contracts/dependencies/openzeppelin/contracts/SafeERC20.sol";
 
 /**
  * @title StakingPool contract
@@ -20,11 +20,12 @@ import {SafeERC20} from "../../dependencies/openzeppelin/contracts/SafeERC20.sol
  */
 contract StakingPool {
     using WadRayMath for uint256;
+    using SafeERC20 for IERC20;
 
     IERC20 public usdcToken;
     IAToken public ausdcToken;
     IERC20 public mockToken;
-    IAaveLendingPool public aaveLendingPool;
+    ILendingPool public aaveLendingPool;
     uint rewardTokensPerBlock;
     uint totalScaledAmount;
     uint lastRewardedBlock;
