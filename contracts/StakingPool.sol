@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.6.12;
+pragma experimental ABIEncoderV2;
 
 import {IERC20} from "@aave/protocol-v2/contracts/dependencies/openzeppelin/contracts/IERC20.sol";
-import {WadRayMath} from "@aave/protocol-v2/contracts/libraries/math/WadRayMath.sol";
+import {WadRayMath} from "@aave/protocol-v2/contracts/protocol/libraries/math/WadRayMath.sol";
 import {ILendingPool} from "@aave/protocol-v2/contracts/interfaces/ILendingPool.sol";
 import {IAToken} from "@aave/protocol-v2/contracts/interfaces/IAToken.sol";
 import {SafeERC20} from "@aave/protocol-v2/contracts/dependencies/openzeppelin/contracts/SafeERC20.sol";
+import {MockToken} from "./MockToken.sol";
 
 /**
  * @title StakingPool contract
@@ -24,13 +26,15 @@ contract StakingPool {
 
     IERC20 public usdcToken;
     IAToken public ausdcToken;
-    IERC20 public mockToken;
     ILendingPool public aaveLendingPool;
-    uint rewardTokensPerBlock;
-    uint totalScaledAmount;
-    uint lastRewardedBlock;
+    uint public rewardTokensPerBlock;
+    uint public totalScaledAmount;
+    uint public lastRewardedBlock;
     uint accumulatedRewardsPerShare;
-    uint REWARDS_PRECISION = 12;
+    uint REWARDS_PRECISION = 1e12;
+    address public test;
+
+    MockToken public mockToken;
 
     struct stakerInfo {
         uint scaledAmount;
@@ -47,15 +51,16 @@ contract StakingPool {
     constructor(
         address _usdcToken,
         address _ausdcToken,
-        address _mockToken,
         address _aaveLendingPool,
+        address _mockToken,
         uint rewardPerBlock
-    ) {
-        usdcToken = _usdcToken;
-        ausdcToken = _ausdcToken;
-        mockToken = _mockToken;
-        aaveLendingPool = _aaveLendingPool;
+    ) public {
+        usdcToken = IERC20(_usdcToken);
+        aaveLendingPool = ILendingPool(_aaveLendingPool);
+        ausdcToken = IAToken(_ausdcToken);
         rewardTokensPerBlock = rewardPerBlock;
+        mockToken = MockToken(_mockToken);
+        lastRewardedBlock = block.number;
     }
 
     /**
@@ -65,7 +70,7 @@ contract StakingPool {
     function depositWithUSDC(uint amount) external {
         require(amount > 0, "amount should be more than 0");
 
-        usdcToken.safeTransferFrom(msg.sender, address(this), amount);
+        usdcToken.transferFrom(msg.sender, address(this), amount);
         usdcToken.approve(address(aaveLendingPool), amount);
 
         uint oldBalance = ausdcToken.scaledBalanceOf(address(this)); //balance before deposit
@@ -80,12 +85,12 @@ contract StakingPool {
         //update the states and get the pending rewards
         harvestRewards();
 
-        //update the stakerInfo and totalAmount
+        //update the stakerInfo and totalScaledAmount
         staker.scaledAmount += _amount;
         staker.rewardsDebt =
             (staker.scaledAmount * accumulatedRewardsPerShare) /
             REWARDS_PRECISION;
-        totalamount += _amount;
+        totalScaledAmount += _amount;
 
         emit DepositWithUSDC(msg.sender, amount);
     }
@@ -99,7 +104,7 @@ contract StakingPool {
         stakerInfo storage staker = stakers[msg.sender];
 
         uint oldBalance = ausdcToken.scaledBalanceOf(address(msg.sender)); //scaledBalance before deposit
-        ausdcToken.safeTransferFrom(address(msg.sender), address(this), amount);
+        ausdcToken.transferFrom(address(msg.sender), address(this), amount);
         uint currentBalance = ausdcToken.scaledBalanceOf(address(msg.sender)); //scaledBalance after deposit
 
         //new deposited amount
@@ -108,12 +113,12 @@ contract StakingPool {
         //update the states and get the pending rewards
         harvestRewards();
 
-        //update the stakerInfo and totalAmount
+        //update the stakerInfo and totalScaledAmount
         staker.scaledAmount += _amount;
         staker.rewardsDebt =
             (staker.scaledAmount * accumulatedRewardsPerShare) /
             REWARDS_PRECISION;
-        totalAmount += _amount;
+        totalScaledAmount += _amount;
 
         emit DepositWithAUSDC(msg.sender, amount);
     }
@@ -122,7 +127,7 @@ contract StakingPool {
      * @dev Withdraw an 'amount' of USDC from stakingPool's aUSDC
      * @param amount the amount that staker withdraw from the stakingPool
      */
-    function depositInUSDC(uint amount) external {
+    function withdrawInUSDC(uint amount) external {
         require(amount > 0, "amount should be more than 0");
 
         //convert amount to scaledAmount
@@ -139,12 +144,12 @@ contract StakingPool {
         //update the states and get the pending rewards
         harvestRewards();
 
-        //update the stakerInfo and totalAmount
+        //update the stakerInfo and totalScaledAmount
         staker.scaledAmount -= _amount;
         staker.rewardsDebt =
-            (staker.amount * accumulatedRewardsPerShare) /
+            (staker.scaledAmount * accumulatedRewardsPerShare) /
             REWARDS_PRECISION;
-        totalAmount -= _amount;
+        totalScaledAmount -= _amount;
 
         aaveLendingPool.withdraw(address(usdcToken), amount, msg.sender);
 
@@ -155,7 +160,7 @@ contract StakingPool {
      * @dev Withdraw an 'amount' of aUSDC from stakingPool
      * @param amount the amount that staker withdraw from the stakingPool
      */
-    function depositInAUSDC(uint amount) external {
+    function withdrawInAUSDC(uint amount) external {
         require(amount > 0, "amount should be more than 0");
 
         //convert amount to scaledAmount
@@ -172,14 +177,14 @@ contract StakingPool {
         //update the states and get the pending rewards
         harvestRewards();
 
-        //update the stakerInfo and totalAmount
+        //update the stakerInfo and totalScaledAmount
         staker.scaledAmount -= _amount;
         staker.rewardsDebt =
-            (staker.amount * accumulatedRewardsPerShare) /
+            (staker.scaledAmount * accumulatedRewardsPerShare) /
             REWARDS_PRECISION;
-        totalAmount -= _amount;
+        totalScaledAmount -= _amount;
 
-        ausdcToken.safeTransfer(msg.sender, amount);
+        ausdcToken.transfer(msg.sender, amount);
 
         emit WithdrawInAUSDC(msg.sender, amount);
     }
@@ -195,7 +200,8 @@ contract StakingPool {
 
         stakerInfo storage staker = stakers[msg.sender];
 
-        uint rewards = (block.number - lastRewardedBlock) * rewardPerBlock;
+        uint rewards = (block.number - lastRewardedBlock) *
+            rewardTokensPerBlock;
 
         //update the accumulatedRewardsPerShare
         accumulatedRewardsPerShare +=
@@ -226,13 +232,23 @@ contract StakingPool {
 
     /**
      * @dev Get the pending Rewards
-     * @return pendingRewards the amount of the pendingRewards
+     * @return pendingReward the amount of the pendingRewards
      */
-    function pendingRewards() public view returns (uint pendingRewards) {
+    function pendingRewards() public view returns (uint pendingReward) {
         stakerInfo storage staker = stakers[msg.sender];
+        uint accRewardsPerShare = accumulatedRewardsPerShare;
 
+        if (totalScaledAmount != 0 && lastRewardedBlock <= block.number) {
+            uint rewards = (block.number - lastRewardedBlock) *
+                rewardTokensPerBlock;
+
+            //update the accumulatedRewardsPerShare
+            accRewardsPerShare +=
+                (rewards * REWARDS_PRECISION) /
+                totalScaledAmount;
+        }
         //calculate the pending rewards
-        pendingRewards =
+        pendingReward =
             (staker.scaledAmount * accumulatedRewardsPerShare) /
             REWARDS_PRECISION -
             staker.rewardsDebt;
